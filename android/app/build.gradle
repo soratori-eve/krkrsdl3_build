@@ -25,12 +25,31 @@ android {
         versionCode 6
         versionName '0.0.6'
     }
+
+    // リリース用の署名設定。環境変数(CIのSecrets経由)から読み込む。
+    // ローカルでこれらの環境変数が未設定の場合は signingConfig を適用せず、
+    // 従来どおり unsigned な release ビルドにフォールバックする。
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (ksPath) {
+                storeFile file(ksPath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             debuggable false
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             minifyEnabled false
