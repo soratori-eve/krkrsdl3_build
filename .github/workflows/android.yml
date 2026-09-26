@@ -75,9 +75,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ninja-build nasm autoconf automake libtool pkg-config
 
+      # vcpkg.json の builtin-baseline は vcpkg リポジトリの特定コミットを指すため、
+      # ここは shallow clone にしない（--depth 1 だと baseline.json の解決に失敗する）。
       - name: Setup vcpkg
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
           "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
           echo "$HOME/vcpkg" >> "$GITHUB_PATH"
