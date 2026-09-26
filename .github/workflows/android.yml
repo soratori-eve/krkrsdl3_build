@@ -6,6 +6,19 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'android/**'
+      - 'cpp'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
+      - 'vcpkg/**'
+      - '.github/workflows/android.yml'
+
+env:
+  NDK_VERSION: '28.0.13004108'
+  CMAKE_VERSION: '3.31.1'
 
 jobs:
   build-android:
@@ -14,12 +27,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: true
+
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -34,10 +58,40 @@ jobs:
         run: |
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;34.0.0"
-          sdkmanager "ndk;28.0.13004108"
-          sdkmanager "cmake;3.31.1"
+          sdkmanager "ndk;${{ env.NDK_VERSION }}"
+          sdkmanager "cmake;${{ env.CMAKE_VERSION }}"
 
-      - name: Grant execute permission
+      # CMakeLists.txt が $ENV{ANDROID_NDK_HOME} を直接参照して
+      # vcpkg のチェインロードツールチェインに渡しているので、
+      # sdkmanager でインストールした NDK のパスを明示的に環境変数へ書き出す。
+      - name: Export ANDROID_NDK_HOME
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${{ env.NDK_VERSION }}" >> "$GITHUB_ENV"
+
+      # vcpkg 経由で ffmpeg 等をソースからビルドするための最低限のツール類
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build nasm autoconf automake libtool pkg-config
+
+      - name: Setup vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
+          echo "$HOME/vcpkg" >> "$GITHUB_PATH"
+
+      # ffmpeg 等の初回ビルドは重いので、バイナリキャッシュを永続化する
+      - name: Cache vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-android-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg/ports/**', 'vcpkg/triplets/**') }}
+          restore-keys: |
+            vcpkg-android-
+
+      - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
       - name: Build Release APK
@@ -46,7 +100,7 @@ jobs:
 
       - name: List APK
         run: |
-          find app/build/outputs/apk/release -type f -name "*.apk" -print
+          find android/app/build/outputs/apk/release -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
